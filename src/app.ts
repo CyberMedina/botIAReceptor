@@ -7,6 +7,7 @@ import "dotenv/config";
 import { readFileSync } from 'fs';
 import { Request, Response, NextFunction } from 'express'
 import rateLimit from 'express-rate-limit'
+import { unlink } from 'fs/promises';
 
 const PORT = process.env.PORT ?? 3007
 
@@ -17,16 +18,31 @@ const welcomeFlow = addKeyword<Provider, Database>(['hi', 'hello', 'hola'])
         .addAction(async (ctx, ctxFn) => {
             console.log("Recibi una imagen")
             const localPath = await ctxFn.provider.saveFile(ctx, { path: './assets' })
-            const prompt = `Clasifica documentos de transacciones como recibos, comprobantes de pago, transferencias, y retiros sin tarjeta. Acepta únicamente transacciones válidas con valores mayores a 0. Si el monto está disponible, inclúyelo en el JSON. Si se detecta que es un 'retiro sin tarjeta', incluye también "retiro_sin_tarjeta": true en la respuesta. Devuelve exclusivamente una respuesta en formato JSON:
+            
+            try {
+                const prompt = `Clasifica documentos de transacciones como recibos, comprobantes de pago, transferencias, y retiros sin tarjeta. Acepta únicamente transacciones válidas con valores mayores a 0. Si el monto está disponible, inclúyelo en el JSON. Si se detecta que es un 'retiro sin tarjeta', incluye también "retiro_sin_tarjeta": true en la respuesta. Devuelve exclusivamente una respuesta en formato JSON:
     
     Para transacciones válidas: {recibo: true, monto: valor, retiro_sin_tarjeta: true/false}.
     Para transacciones inválidas: {recibo: false}`;
-            const response = await image2text(prompt, localPath)
-            await ctxFn.flowDynamic(response)
-    
-            // Modificación en la forma de enviar el mensaje
-            const testNumber = process.env.NUMBER_PEPE
-            await ctxFn.provider.sendMessage(testNumber, 'Este es un mensaje de prueba', {})
+                const response = await image2text(prompt, localPath)
+                await ctxFn.flowDynamic(response)
+                
+                // Enviar mensaje de prueba
+                const testNumber = process.env.NUMBER_PEPE
+                await ctxFn.provider.sendMessage(testNumber, 'Este es un mensaje de prueba', {})
+                
+                // Eliminar el archivo después de procesarlo
+                await unlink(localPath)
+                console.log('Archivo eliminado:', localPath)
+            } catch (error) {
+                console.error('Error al procesar o eliminar la imagen:', error)
+                // Intentar eliminar el archivo incluso si hubo un error en el procesamiento
+                try {
+                    await unlink(localPath)
+                } catch (unlinkError) {
+                    console.error('Error al eliminar el archivo:', unlinkError)
+                }
+            }
         })
 
 // Configuración del rate limiter modificada
