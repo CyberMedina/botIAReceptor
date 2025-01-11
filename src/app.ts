@@ -52,12 +52,42 @@ const authMiddleware = (req: Request, res: Response, next: NextFunction) => {
         const apiKey = req.headers['x-api-key']
         
         if (!apiKey || apiKey !== process.env.API_KEY) {
-            res.status(401).json({ error: 'No autorizado' })
-            return
+            res.writeHead(401, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'No autorizado' }));
+            return;
         }
         
         next()
     })
+}
+
+// Middleware para Basic Auth específico para /health
+const healthAuthMiddleware = (req: Request, res: Response, next: NextFunction) => {
+    const authHeader = req.headers.authorization;
+
+    if (!authHeader || !authHeader.startsWith('Basic ')) {
+        res.writeHead(401, { 
+            'Content-Type': 'application/json',
+            'WWW-Authenticate': 'Basic realm="Health Check"'
+        });
+        res.end(JSON.stringify({ error: 'Autenticación requerida' }));
+        return;
+    }
+
+    const base64Credentials = authHeader.split(' ')[1];
+    const credentials = Buffer.from(base64Credentials, 'base64').toString('utf-8');
+    const [username, password] = credentials.split(':');
+
+    if (username !== process.env.HEALTH_USER || password !== process.env.HEALTH_PASSWORD) {
+        res.writeHead(401, { 
+            'Content-Type': 'application/json',
+            'WWW-Authenticate': 'Basic realm="Health Check"'
+        });
+        res.end(JSON.stringify({ error: 'Credenciales inválidas' }));
+        return;
+    }
+
+    next();
 }
 
 const main = async () => {
@@ -71,8 +101,13 @@ const main = async () => {
         database: adapterDB,
     })
 
-    // Aplicar middleware de autenticación a todas las rutas
-    adapterProvider.server.use(authMiddleware)
+    // Aplicar middleware de autenticación a todas las rutas EXCEPTO /health
+    adapterProvider.server.use((req: Request, res: Response, next: NextFunction) => {
+        if (req.path === '/health') {
+            return next();
+        }
+        authMiddleware(req, res, next);
+    });
 
     adapterProvider.server.post(
         '/v1/messages',
@@ -112,6 +147,14 @@ const main = async () => {
             return res.end(JSON.stringify({ status: 'ok', number, intent }))
         })
     )
+
+    adapterProvider.server.get('/health', healthAuthMiddleware, (req, res) => {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ 
+            status: 'OK', 
+            timestamp: new Date().toISOString() 
+        }));
+    })
 
     httpServer(+PORT)
 }
