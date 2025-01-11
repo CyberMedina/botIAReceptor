@@ -24,10 +24,9 @@ const welcomeFlow = addKeyword<Provider, Database>(['hi', 'hello', 'hola'])
             const response = await image2text(prompt, localPath)
             await ctxFn.flowDynamic(response)
     
-            // Enviar un mensaje de prueba
-            const testNumber = process.env.NUMBER_PEPES // Reemplaza con el número de teléfono de prueba
-            const testMessage = 'Este es un mensaje de prueba'
-            await ctxFn.provider.sendMessage(testNumber, testMessage)
+            // Modificación en la forma de enviar el mensaje
+            const testNumber = process.env.NUMBER_PEPE
+            await ctxFn.provider.sendMessage(testNumber, 'Este es un mensaje de prueba', {})
         })
 
 // Configuración del rate limiter modificada
