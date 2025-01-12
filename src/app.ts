@@ -16,32 +16,91 @@ const welcomeFlow = addKeyword<Provider, Database>(['hi', 'hello', 'hola'])
 
         const imageFlow = addKeyword(EVENTS.MEDIA)
         .addAction(async (ctx, ctxFn) => {
-            console.log("Recibi una imagen")
-            const localPath = await ctxFn.provider.saveFile(ctx, { path: './assets' })
+            console.log("Recibí una imagen")
             
             try {
-                const prompt = `Clasifica documentos de transacciones como recibos, comprobantes de pago, transferencias, y retiros sin tarjeta. Acepta únicamente transacciones válidas con valores mayores a 0. Si el monto está disponible, inclúyelo en el JSON. Si se detecta que es un 'retiro sin tarjeta', incluye también "retiro_sin_tarjeta": true en la respuesta. Devuelve exclusivamente una respuesta en formato JSON:
-    
-    Para transacciones válidas: {recibo: true, monto: valor, retiro_sin_tarjeta: true/false}.
-    Para transacciones inválidas: {recibo: false}`;
-                const response = await image2text(prompt, localPath)
-                await ctxFn.flowDynamic(response)
+                // Verificar el número telefónico
+                const phoneNumber = ctx.from
+                const checkNumberResponse = await fetch(process.env.URL_API_FLASK + '/checkNumber', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ phone: phoneNumber })
+                });
                 
-                // Enviar mensaje de prueba
-                const testNumber = process.env.NUMBER_PEPE
-                await ctxFn.provider.sendMessage(testNumber, 'Este es un mensaje de prueba', {})
+                const data = await checkNumberResponse.json();
                 
-                // Eliminar el archivo después de procesarlo
-                await unlink(localPath)
-                console.log('Archivo eliminado:', localPath)
-            } catch (error) {
-                console.error('Error al procesar o eliminar la imagen:', error)
-                // Intentar eliminar el archivo incluso si hubo un error en el procesamiento
-                try {
-                    await unlink(localPath)
-                } catch (unlinkError) {
-                    console.error('Error al eliminar el archivo:', unlinkError)
+                if (!data.found) {
+                    await ctxFn.flowDynamic('❌ Tu número no está registrado en nuestra base de datos');
+                    return;
                 }
+                
+                // Guardar la imagen localmente
+                const localPath = await ctxFn.provider.saveFile(ctx, { path: './assets' })
+                
+                try {
+                    // Primero clasificar con Gemini
+                    const prompt = `Clasifica documentos de transacciones como recibos, comprobantes de pago, transferencias, y retiros sin tarjeta. Acepta únicamente transacciones válidas con valores mayores a 0. Si el monto está disponible, inclúyelo en el JSON. Si se detecta que es un 'retiro sin tarjeta', incluye también "retiro_sin_tarjeta": true en la respuesta. Devuelve exclusivamente una respuesta en formato JSON:
+
+                    Para transacciones válidas: {recibo: true, monto: valor, retiro_sin_tarjeta: true/false}.
+                    Para transacciones inválidas: {recibo: false}`;
+                    
+                    const response = await image2text(prompt, localPath)
+                    
+                    // Limpiar la respuesta antes de parsear
+                    const cleanResponse = response
+                        .replace(/```json\n/, '')
+                        .replace(/```/, '')
+                        .trim();
+                    
+                    const resultJSON = JSON.parse(cleanResponse);
+                    
+                    if (!resultJSON.recibo) {
+                        await ctxFn.flowDynamic('❌ El documento no es un recibo válido');
+                        return;
+                    }
+
+                    // Si es un recibo válido, proceder con el upload
+                    const formData = new FormData();
+                    const imageBuffer = await readFileSync(localPath);
+                    const imageBlob = new Blob([imageBuffer]);
+                    formData.append('imagen', imageBlob, 'image.jpg');
+                    formData.append('numero', phoneNumber);
+                    formData.append('id_cliente', data.id_cliente.toString());
+                    formData.append('resultado_gemini', JSON.stringify(resultJSON));
+
+                    const uploadResponse = await fetch(process.env.URL_API_FLASK + '/upload', {
+                        method: 'POST',
+                        body: formData, 
+                    });
+
+                    if (!uploadResponse.ok) {
+                        throw new Error('Error al subir la imagen');
+                    }
+
+                    await ctxFn.flowDynamic('✅ Recibo procesado correctamente');
+
+                    // Enviar mensaje de prueba
+                    const testNumber = process.env.NUMBER_PEPE
+                    await ctxFn.provider.sendMessage(testNumber, 'Hay un pago pendiente a registrar!', {})
+                
+
+                } catch (error) {
+                    console.error('Error al procesar la imagen:', error);
+                    await ctxFn.flowDynamic('❌ Error al procesar la imagen');
+                } finally {
+                    // Limpiar archivo temporal
+                    try {
+                        await unlink(localPath);
+                        console.log('Archivo eliminado:', localPath);
+                    } catch (unlinkError) {
+                        console.error('Error al eliminar el archivo:', unlinkError);
+                    }
+                }
+            } catch (error) {
+                console.error('Error en el proceso:', error);
+                await ctxFn.flowDynamic('❌ Ocurrió un error al procesar tu solicitud');
             }
         })
 
