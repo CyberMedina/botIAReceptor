@@ -84,7 +84,26 @@ const welcomeFlow = addKeyword<Provider, Database>(['hi', 'hello', 'hola'])
                     // Enviar mensaje de prueba
                     const testNumber = process.env.NUMBER_PEPE
                     await ctxFn.provider.sendMessage(testNumber, 'Hay un pago pendiente a registrar!', {})
-                
+
+                    // Notificar a través de Voice Monkey
+                    try {
+                        const voiceMonkeyResponse = await fetch(
+                            'https://api-v2.voicemonkey.io/announcement?' + new URLSearchParams({
+                                token: process.env.VOICE_MONKEY_TOKEN,
+                                device: process.env.VOICE_MONKEY_DEVICE,
+                                text: '¡Nuevo recibo recibido! Pendiente de registrar.',
+                                chime: 'soundbank://soundlibrary/home/amzn_sfx_doorbell_01',
+                                language: 'es-MX',
+                                character_display: '¡Nuevo!'
+                            })
+                        );
+
+                        if (!voiceMonkeyResponse.ok) {
+                            console.error('Error al enviar notificación a Voice Monkey');
+                        }
+                    } catch (error) {
+                        console.error('Error con Voice Monkey:', error);
+                    }
 
                 } catch (error) {
                     console.error('Error al procesar la imagen:', error);
