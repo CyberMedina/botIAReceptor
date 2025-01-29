@@ -11,7 +11,7 @@ import { unlink } from 'fs/promises';
 
 const PORT = process.env.PORT ?? 3007
 
-const welcomeFlow = addKeyword<Provider, Database>(['hi', 'hello', 'hola'])
+const welcomeFlow = addKeyword<Provider, Database>(['_♣_'])
     .addAnswer(`🙌 Hello welcome to this *Chatbot*`)
 
         const imageFlow = addKeyword(EVENTS.MEDIA)
@@ -32,7 +32,8 @@ const welcomeFlow = addKeyword<Provider, Database>(['hi', 'hello', 'hola'])
                 const data = await checkNumberResponse.json();
                 
                 if (!data.found) {
-                    await ctxFn.flowDynamic('❌ Tu número no está registrado en nuestra base de datos');
+                    // await ctxFn.flowDynamic('❌ Tu número no está registrado en nuestra base de datos');
+                    console.log('Número no encontrado:');
                     return;
                 }
                 
@@ -57,7 +58,8 @@ const welcomeFlow = addKeyword<Provider, Database>(['hi', 'hello', 'hola'])
                     const resultJSON = JSON.parse(cleanResponse);
                     
                     if (!resultJSON.recibo) {
-                        await ctxFn.flowDynamic('❌ El documento no es un recibo válido');
+                        // await ctxFn.flowDynamic('❌ El documento no es un recibo válido');
+                        console.log('Recibo inválido');
                         return;
                     }
 
@@ -79,22 +81,31 @@ const welcomeFlow = addKeyword<Provider, Database>(['hi', 'hello', 'hola'])
                         throw new Error('Error al subir la imagen');
                     }
 
-                    await ctxFn.flowDynamic('✅ Recibo procesado correctamente');
+                    const responseData = await uploadResponse.json();
 
-                    // Enviar mensaje de prueba
+                    // Enviar mensaje de prueba con datos del cliente
                     const testNumber = process.env.NUMBER_PEPE
-                    await ctxFn.provider.sendMessage(testNumber, 'Hay un pago pendiente a registrar!', {})
+                    const whatsappMessage = `🔔 *Nuevo Recibo Recibido*\n\n` +
+                        `👤 Cliente: ${responseData.Nombre_cliente} ${responseData.Apellido_cliente}\n` +
+                        `💰 Monto Sugerido: C$${responseData.monto_sugerido}\n` +
+                        `📝 Observación: ${responseData.observacion_sugerida}\n\n` +
+                        `🔍 Ver detalles: ${responseData.url_chat}`;
 
-                    // Notificar a través de Voice Monkey
+                    await ctxFn.provider.sendMessage(testNumber, whatsappMessage, {})
+
+                    // Notificar a través de Voice Monkey con datos del cliente
                     try {
+                        const voiceMonkeyMessage = `Nuevo recibo de ${responseData.Nombre_cliente} ${responseData.Apellido_cliente} ` +
+                            `por ${responseData.monto_sugerido} córdobas. Es vía ${responseData.observacion_sugerida}`;
+
                         const voiceMonkeyResponse = await fetch(
                             'https://api-v2.voicemonkey.io/announcement?' + new URLSearchParams({
                                 token: process.env.VOICE_MONKEY_TOKEN,
                                 device: process.env.VOICE_MONKEY_DEVICE,
-                                text: '¡Nuevo recibo recibido! Pendiente de registrar.',
+                                text: voiceMonkeyMessage,
                                 chime: 'soundbank://soundlibrary/home/amzn_sfx_doorbell_01',
                                 language: 'es-MX',
-                                character_display: '¡Nuevo!'
+                                character_display: '¡Nuevo Recibo!'
                             })
                         );
 
@@ -107,7 +118,8 @@ const welcomeFlow = addKeyword<Provider, Database>(['hi', 'hello', 'hola'])
 
                 } catch (error) {
                     console.error('Error al procesar la imagen:', error);
-                    await ctxFn.flowDynamic('❌ Error al procesar la imagen');
+                    // await ctxFn.flowDynamic('❌ Error al procesar la imagen');
+                    console.log('Error al procesar la imagen');
                 } finally {
                     // Limpiar archivo temporal
                     try {
@@ -119,7 +131,7 @@ const welcomeFlow = addKeyword<Provider, Database>(['hi', 'hello', 'hola'])
                 }
             } catch (error) {
                 console.error('Error en el proceso:', error);
-                await ctxFn.flowDynamic('❌ Ocurrió un error al procesar tu solicitud');
+                // await ctxFn.flowDynamic('❌ Ocurrió un error al procesar tu solicitud');
             }
         })
 
