@@ -17,6 +17,7 @@ const welcomeFlow = addKeyword<Provider, Database>(['_♣_'])
         const imageFlow = addKeyword(EVENTS.MEDIA)
         .addAction(async (ctx, ctxFn) => {
             console.log("Recibí una imagen")
+            let localPath: string | undefined;
             
             try {
                 // Verificar el número telefónico
@@ -32,96 +33,119 @@ const welcomeFlow = addKeyword<Provider, Database>(['_♣_'])
                 const data = await checkNumberResponse.json();
                 
                 if (!data.found) {
-                    // await ctxFn.flowDynamic('❌ Tu número no está registrado en nuestra base de datos');
                     console.log('Número no encontrado:');
                     return;
                 }
                 
                 // Guardar la imagen localmente
-                const localPath = await ctxFn.provider.saveFile(ctx, { path: './assets' })
+                localPath = await ctxFn.provider.saveFile(ctx, { path: './assets' })
                 
-                try {
-                    // Primero clasificar con Gemini
-                    const prompt = `Clasifica documentos de transacciones como recibos, comprobantes de pago, transferencias, y retiros sin tarjeta. Acepta únicamente transacciones válidas con valores mayores a 0. Si el monto está disponible, inclúyelo en el JSON. Si se detecta que es un 'retiro sin tarjeta', incluye también "retiro_sin_tarjeta": true en la respuesta. Devuelve exclusivamente una respuesta en formato JSON:
-
-                    Para transacciones válidas: {recibo: true, monto: valor, retiro_sin_tarjeta: true/false}.
-                    Para transacciones inválidas: {recibo: false}`;
-                    
-                    const response = await image2text(prompt, localPath)
-                    
-                    // Limpiar la respuesta antes de parsear
-                    const cleanResponse = response
-                        .replace(/```json\n/, '')
-                        .replace(/```/, '')
-                        .trim();
-                    
-                    const resultJSON = JSON.parse(cleanResponse);
-                    
-                    if (!resultJSON.recibo) {
-                        // await ctxFn.flowDynamic('❌ El documento no es un recibo válido');
-                        console.log('Recibo inválido');
-                        return;
-                    }
-
-                    // Si es un recibo válido, proceder con el upload
-                    const formData = new FormData();
-                    const imageBuffer = await readFileSync(localPath);
-                    const imageBlob = new Blob([imageBuffer]);
-                    formData.append('imagen', imageBlob, 'image.jpg');
-                    formData.append('numero', phoneNumber);
-                    formData.append('id_cliente', data.id_cliente.toString());
-                    formData.append('resultado_gemini', JSON.stringify(resultJSON));
-
-                    const uploadResponse = await fetch(process.env.URL_API_FLASK + '/upload', {
-                        method: 'POST',
-                        body: formData, 
-                    });
-
-                    if (!uploadResponse.ok) {
-                        throw new Error('Error al subir la imagen');
-                    }
-
-                    const responseData = await uploadResponse.json();
-
-                    // Enviar mensaje de prueba con datos del cliente
-                    const testNumber = process.env.NUMBER_PEPE
-                    const whatsappMessage = `🔔 *Nuevo Recibo Recibido*\n\n` +
-                        `👤 Cliente: ${responseData.Nombre_cliente} ${responseData.Apellido_cliente}\n` +
-                        `💰 Monto Sugerido: C$${responseData.monto_sugerido}\n` +
-                        `📝 Observación: ${responseData.observacion_sugerida}\n\n` +
-                        `🔍 Ver detalles: ${responseData.url_chat}`;
-
-                    await ctxFn.provider.sendMessage(testNumber, whatsappMessage, {})
-
-                    // Notificar a través de Voice Monkey con datos del cliente
+                // Implementación de reintentos para el análisis de imagen
+                const MAX_INTENTOS = 5;
+                let intento = 1;
+                let resultJSON;
+                
+                while (intento <= MAX_INTENTOS) {
                     try {
-                        const voiceMonkeyMessage = `Nuevo recibo de ${responseData.Nombre_cliente} ${responseData.Apellido_cliente} ` +
-                            `por ${responseData.monto_sugerido} córdobas. Es vía ${responseData.observacion_sugerida}`;
+                        const prompt = `Clasifica documentos de transacciones como recibos, comprobantes de pago, transferencias, y retiros sin tarjeta. Acepta únicamente transacciones válidas con valores mayores a 0. Si el monto está disponible, inclúyelo en el JSON. Si se detecta que es un 'retiro sin tarjeta', incluye también "retiro_sin_tarjeta": true en la respuesta. Devuelve exclusivamente una respuesta en formato JSON:
 
-                        const voiceMonkeyResponse = await fetch(
-                            'https://api-v2.voicemonkey.io/announcement?' + new URLSearchParams({
-                                token: process.env.VOICE_MONKEY_TOKEN,
-                                device: process.env.VOICE_MONKEY_DEVICE,
-                                text: voiceMonkeyMessage,
-                                chime: 'soundbank://soundlibrary/home/amzn_sfx_doorbell_01',
-                                language: 'es-MX',
-                                character_display: '¡Nuevo Recibo!'
-                            })
-                        );
-
-                        if (!voiceMonkeyResponse.ok) {
-                            console.error('Error al enviar notificación a Voice Monkey');
-                        }
+                        Para transacciones válidas: {recibo: true, monto: valor, retiro_sin_tarjeta: true/false}.
+                        Para transacciones inválidas: {recibo: false}`;
+                        
+                        const response = await image2text(prompt, localPath)
+                        
+                        // Limpiar la respuesta antes de parsear
+                        const cleanResponse = response
+                            .replace(/```json\n/, '')
+                            .replace(/```/, '')
+                            .trim();
+                        
+                        resultJSON = JSON.parse(cleanResponse);
+                        break; // Si llegamos aquí, el análisis fue exitoso
+                        
                     } catch (error) {
-                        console.error('Error con Voice Monkey:', error);
+                        console.log(`Intento ${intento} fallido:`, error.message);
+                        
+                        if (intento === MAX_INTENTOS) {
+                            // Si fallaron todos los intentos, enviar mensaje a Pepe
+                            const testNumber = process.env.NUMBER_PEPE;
+                            await ctxFn.provider.sendMessage(
+                                testNumber,
+                                `❌ Error: No se pudo analizar la imagen después de 5 intentos\n\nNúmero del cliente: ${phoneNumber}`,
+                                {}
+                            );
+                            throw new Error("Error al procesar imagen después de 5 intentos");
+                        }
+                        
+                        // Esperar 2 segundos antes del siguiente intento
+                        await new Promise(resolve => setTimeout(resolve, 20000));
+                        intento++;
                     }
+                }
 
+                if (!resultJSON.recibo) {
+                    console.log('Recibo inválido');
+                    return;
+                }
+
+                // Si es un recibo válido, proceder con el upload
+                const formData = new FormData();
+                const imageBuffer = await readFileSync(localPath);
+                const imageBlob = new Blob([imageBuffer]);
+                formData.append('imagen', imageBlob, 'image.jpg');
+                formData.append('numero', phoneNumber);
+                formData.append('id_cliente', data.id_cliente.toString());
+                formData.append('resultado_gemini', JSON.stringify(resultJSON));
+
+                const uploadResponse = await fetch(process.env.URL_API_FLASK + '/upload', {
+                    method: 'POST',
+                    body: formData, 
+                });
+
+                if (!uploadResponse.ok) {
+                    throw new Error('Error al subir la imagen');
+                }
+
+                const responseData = await uploadResponse.json();
+
+                // Enviar mensaje de prueba con datos del cliente
+                const testNumber = process.env.NUMBER_PEPE
+                const whatsappMessage = `🔔 *Nuevo Recibo Recibido*\n\n` +
+                    `👤 Cliente: ${responseData.Nombre_cliente} ${responseData.Apellido_cliente}\n` +
+                    `💰 Monto Sugerido: C$${responseData.monto_sugerido}\n` +
+                    `📝 Observación: ${responseData.observacion_sugerida}\n\n` +
+                    `🔍 Ver detalles: ${responseData.url_chat}`;
+
+                await ctxFn.provider.sendMessage(testNumber, whatsappMessage, {})
+
+                // Notificar a través de Voice Monkey con datos del cliente
+                try {
+                    const voiceMonkeyMessage = `Nuevo recibo de ${responseData.Nombre_cliente} ${responseData.Apellido_cliente} ` +
+                        `por ${responseData.monto_sugerido} córdobas. Es vía ${responseData.observacion_sugerida}`;
+
+                    const voiceMonkeyResponse = await fetch(
+                        'https://api-v2.voicemonkey.io/announcement?' + new URLSearchParams({
+                            token: process.env.VOICE_MONKEY_TOKEN,
+                            device: process.env.VOICE_MONKEY_DEVICE,
+                            text: voiceMonkeyMessage,
+                            chime: 'soundbank://soundlibrary/home/amzn_sfx_doorbell_01',
+                            language: 'es-MX',
+                            character_display: '¡Nuevo Recibo!'
+                        })
+                    );
+
+                    if (!voiceMonkeyResponse.ok) {
+                        console.error('Error al enviar notificación a Voice Monkey');
+                    }
                 } catch (error) {
-                    console.error('Error al procesar la imagen:', error);
-                    // await ctxFn.flowDynamic('❌ Error al procesar la imagen');
-                    console.log('Error al procesar la imagen');
-                } finally {
-                    // Limpiar archivo temporal
+                    console.error('Error con Voice Monkey:', error);
+                }
+
+            } catch (error) {
+                console.error('Error en el proceso:', error);
+            } finally {
+                // Limpiar archivo temporal solo si existe
+                if (localPath) {
                     try {
                         await unlink(localPath);
                         console.log('Archivo eliminado:', localPath);
@@ -129,9 +153,6 @@ const welcomeFlow = addKeyword<Provider, Database>(['_♣_'])
                         console.error('Error al eliminar el archivo:', unlinkError);
                     }
                 }
-            } catch (error) {
-                console.error('Error en el proceso:', error);
-                // await ctxFn.flowDynamic('❌ Ocurrió un error al procesar tu solicitud');
             }
         })
 
