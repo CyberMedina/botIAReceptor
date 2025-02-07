@@ -1,8 +1,9 @@
 import { join } from 'path'
-import { createBot, createProvider, createFlow, addKeyword, utils, EVENTS } from '@builderbot/bot'
+import { createBot, createFlow, addKeyword, utils, EVENTS } from '@builderbot/bot'
 import { MemoryDB as Database } from '@builderbot/bot'
-import { BaileysProvider as Provider } from '@builderbot/provider-baileys'
+import { BaileysProvider } from '@builderbot/provider-baileys'
 import { image2text } from './gemini'
+import { createCustomProvider } from './config/provider'
 import "dotenv/config";
 import { readFileSync } from 'fs';
 import { Request, Response, NextFunction } from 'express'
@@ -11,7 +12,7 @@ import { unlink } from 'fs/promises';
 
 const PORT = process.env.PORT ?? 3007
 
-const welcomeFlow = addKeyword<Provider, Database>(['_♣_'])
+const welcomeFlow = addKeyword<BaileysProvider, Database>(['_♣_'])
     .addAnswer(`🙌 Hello welcome to this *Chatbot*`)
 
         const imageFlow = addKeyword(EVENTS.MEDIA)
@@ -217,25 +218,25 @@ const healthAuthMiddleware = (req: Request, res: Response, next: NextFunction) =
 }
 
 const main = async () => {
-    const adapterFlow = createFlow([welcomeFlow, imageFlow])
-    const adapterProvider = createProvider(Provider)
-    const adapterDB = new Database()
-    
+    const provider = createCustomProvider()
+    const database = new Database()
+    const flows = createFlow([welcomeFlow, imageFlow])
+
     const { handleCtx, httpServer } = await createBot({
-        flow: adapterFlow,
-        provider: adapterProvider,
-        database: adapterDB,
+        flow: flows,
+        provider,
+        database,
     })
 
     // Aplicar middleware de autenticación a todas las rutas EXCEPTO /health
-    adapterProvider.server.use((req: Request, res: Response, next: NextFunction) => {
+    provider.server.use((req: Request, res: Response, next: NextFunction) => {
         if (req.path === '/health') {
             return next();
         }
         authMiddleware(req, res, next);
     });
 
-    adapterProvider.server.post(
+    provider.server.post(
         '/v1/messages',
         handleCtx(async (bot, req, res) => {
             const { number, message, urlMedia } = req.body
@@ -244,7 +245,7 @@ const main = async () => {
         })
     )
 
-    adapterProvider.server.post(
+    provider.server.post(
         '/v1/register',
         handleCtx(async (bot, req, res) => {
             const { number, name } = req.body
@@ -253,7 +254,7 @@ const main = async () => {
         })
     )
 
-    adapterProvider.server.post(
+    provider.server.post(
         '/v1/samples',
         handleCtx(async (bot, req, res) => {
             const { number, name } = req.body
@@ -262,7 +263,7 @@ const main = async () => {
         })
     )
 
-    adapterProvider.server.post(
+    provider.server.post(
         '/v1/blacklist',
         handleCtx(async (bot, req, res) => {
             const { number, intent } = req.body
@@ -274,7 +275,7 @@ const main = async () => {
         })
     )
 
-    adapterProvider.server.get('/health', healthAuthMiddleware, (req, res) => {
+    provider.server.get('/health', healthAuthMiddleware, (req, res) => {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ 
             status: 'OK', 
@@ -282,7 +283,7 @@ const main = async () => {
         }));
     })
 
-    httpServer(+PORT)
+    httpServer(Number(PORT))
 }
 
 main()
