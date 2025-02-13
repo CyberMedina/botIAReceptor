@@ -15,6 +15,7 @@
     "@builderbot/bot": "1.2.2",
     "@builderbot/provider-baileys": "^1.2.5",
     "@builderbot/provider-meta": "1.2.2",
+    "@builderbot/core-baileys": "6.7.5",
     "@google/generative-ai": "^0.17.1",
     "@hapi/boom": "^10.0.1",
     "@whiskeysockets/baileys": "^6.7.12",
@@ -25,7 +26,6 @@
     "node-cache": "^5.1.2"
   },
   "devDependencies": {
-    "@builderbot/core-baileys": "^6.7.5",
     "@types/node": "^20.17.17",
     "@typescript-eslint/eslint-plugin": "^7.2.0",
     "@typescript-eslint/parser": "^7.4.0",
