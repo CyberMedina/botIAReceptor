@@ -2,9 +2,9 @@
 import { Boom } from '@hapi/boom';
 import { randomBytes } from 'crypto';
 import NodeCache from 'node-cache';
-import { makeMessagesSocket } from '@builderbot/core-baileys/lib/Socket/messages-send';
-import { makeMutex } from '@builderbot/core-baileys/lib/Utils/make-mutex';
-import { extractGroupMetadata } from '@builderbot/core-baileys/lib/Socket/groups';
+import { makeMessagesSocket } from '@builderbot/core-baileys/lib/Socket/messages-send.js';
+import { makeMutex } from '@builderbot/core-baileys/lib/Utils/make-mutex.js';
+import { extractGroupMetadata } from '@builderbot/core-baileys/lib/Socket/groups.js';
 import { 
     proto,
     WAMessageStatus,

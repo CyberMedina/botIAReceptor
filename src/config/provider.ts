@@ -1,7 +1,7 @@
 import { BaileysProvider } from '@builderbot/provider-baileys'
 import { createProvider } from '@builderbot/bot'
 import { proto } from '@whiskeysockets/baileys'
-import { makeMessagesRecvSocket } from '../lib/baileys/messages-recv'
+import { makeMessagesRecvSocket } from '../lib/baileys/messages-recv.js'
 
 export const createCustomProvider = () => {
     console.log('🔄 Iniciando creación del provider personalizado...');
