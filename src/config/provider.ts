@@ -1,55 +1,57 @@
 import { BaileysProvider } from '@builderbot/provider-baileys'
 import { createProvider } from '@builderbot/bot'
 import { proto } from '@whiskeysockets/baileys'
+import { makeMessagesRecvSocket } from '../lib/baileys/messages-recv'
 
 export const createCustomProvider = () => {
+    console.log('🔄 Iniciando creación del provider personalizado...');
+
     const provider = createProvider(BaileysProvider, {
         // Aquí van tus configuraciones actuales
     })
+
+    console.log('✅ Provider base creado, aplicando personalizaciones...');
 
     // Accedemos al socket interno donde están los métodos
     const socket = (provider as any).socket
 
     if (socket) {
-        // Sobreescribimos el método handleCall en el socket
-        const originalHandleCall = socket.handleCall
+        console.log('🔧 Configurando socket personalizado...');
 
+        // Eliminamos cualquier manejador existente antes de aplicar nuestras modificaciones
+        if (socket.ev) {
+            console.log('🧹 Limpiando manejadores existentes...');
+            socket.ev.removeAllListeners('call');
+        }
+        if (socket.ws) {
+            socket.ws.removeAllListeners('CB:call');
+        }
+
+        // Aplicamos nuestro makeMessagesRecvSocket personalizado
+        console.log('🔄 Aplicando socket personalizado...');
+        const customSocket = makeMessagesRecvSocket(socket)
+        Object.assign(socket, customSocket)
+
+        // Aseguramos que los métodos críticos estén deshabilitados
         socket.handleCall = async (node: any) => {
-            try {
-                const { attrs } = node
-                const [infoChild] = node.children || []
-                const callId = infoChild?.attrs?.['call-id']
-                const from = infoChild?.attrs?.from || infoChild?.attrs?.['call-creator']
-                const status = infoChild?.attrs?.['type'] || 'unknown'
-
-                const call = {
-                    chatId: attrs.from,
-                    from,
-                    id: callId,
-                    date: new Date(+attrs.t * 1000),
-                    offline: !!attrs.offline,
-                    status,
-                }
-
-                // Solo emitimos el evento y enviamos ACK
-                socket.ev.emit('call', [call])
-                await socket.sendMessageAck(node)
-
-                // Registramos la llamada
-                console.log('Llamada entrante:', call)
-            } catch (error) {
-                console.error('Error al manejar la llamada:', error)
-                // Si hay error, intentamos usar el manejador original
-                if (originalHandleCall) {
-                    return originalHandleCall(node)
-                }
-            }
+            console.log('📞 Llamada entrante detectada - NO se rechazará', {
+                id: node?.attrs?.id,
+                from: node?.attrs?.from
+            });
         }
 
-        // Sobreescribimos el método rejectCall
         socket.rejectCall = async (callId: string, callFrom: string) => {
-            console.log('Llamada entrante recibida:', { callId, callFrom })
+            console.log('❌ Intento de rechazo de llamada BLOQUEADO', { callId, callFrom });
         }
+
+        // Agregamos un listener para debug
+        socket.ev.on('call', (calls) => {
+            console.log('🔔 Evento de llamada recibido:', JSON.stringify(calls, null, 2));
+        });
+
+        console.log('✅ Configuración personalizada completada');
+    } else {
+        console.warn('⚠️ No se pudo acceder al socket interno');
     }
 
     return provider
